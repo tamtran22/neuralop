@@ -220,6 +220,7 @@ class IU_FNO(BaseModel, name='FNO'):
 
         x = self.projection(x)
 
+        x = F.sigmoid(x)
         return x
 
     @property

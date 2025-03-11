@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 
-def load_trachea_slice_dataset(root_dir, dataset_name, n_train, n_test, resolution, batch_size, test_batch_size):
+def load_trachea_slice_dataset(root_dir, dataset_name, n_train, n_test, resolution, batch_size, test_batch_size, normalize, rgb=True):
 
     ## Check root
     if not os.path.isdir(root_dir):
@@ -27,10 +27,15 @@ def load_trachea_slice_dataset(root_dir, dataset_name, n_train, n_test, resoluti
         images = []
         for file_name in file_names:
             image = Image.open(file_name)
-            images.append(np.expand_dims(np.asarray(image, dtype='uint8')[:,:,0], axis=0))
+            if rgb:
+                images.append(np.expand_dims(np.asarray(image, dtype='uint8')[:,:,:], axis=0))
+            else:
+                images.append(np.expand_dims(np.asarray(image, dtype='uint8')[:,:,0], axis=0))
         data = torch.tensor(np.concatenate(images, axis=0), dtype=torch.float32)
+        if normalize:
+            data = data / 255
         ##
-        number_of_input_timesteps = 10
+        number_of_input_timesteps = 5
         x = []
         y = []
         for i in range(number_of_input_timesteps, data.size(0)):
@@ -38,6 +43,9 @@ def load_trachea_slice_dataset(root_dir, dataset_name, n_train, n_test, resoluti
             y.append(data[i].unsqueeze(0).unsqueeze(0))
         x = torch.concatenate(x, dim=0)
         y = torch.concatenate(y, dim=0)
+        if rgb:
+            x = torch.flatten(x.transpose(3,4).transpose(2,3),1,2)
+            y = torch.flatten(y.transpose(3,4).transpose(2,3),1,2)
         print(x.size(), y.size())
     
         # Save dataset file
