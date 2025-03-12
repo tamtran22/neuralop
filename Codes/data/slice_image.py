@@ -8,8 +8,6 @@ from torch.utils.data import DataLoader
 from neuralop.data.datasets.pt_dataset import PTDataset
 # from .web_utils import download_from_zenodo_record
 
-from neuralop.utils import get_project_root
-
 from PIL import Image
 import numpy as np
 import torch
