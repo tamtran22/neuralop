@@ -44,7 +44,6 @@ def load_trachea_slice_dataset(root_dir, dataset_name, n_train, n_test, resoluti
         if rgb:
             x = torch.flatten(x.transpose(3,4).transpose(2,3),1,2)
             y = torch.flatten(y.transpose(3,4).transpose(2,3),1,2)
-        print(x.size(), y.size())
     
         # Save dataset file
         x_train = x[0:n_train]
