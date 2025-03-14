@@ -1,7 +1,8 @@
 import os
 import numpy as np
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Optional
 import torch
+from neuralop.data.datasets.pt_dataset import PTDataset
 
 def read_tec_file(file_name):
     # Read file
@@ -130,26 +131,130 @@ def combine_dims(
     return data
 
 def load_tecplot_to_pt_dataset(
-    file_names : List[str],
-
+    root_dir : str,
+    dataset_name : str,
+    n_train : int, 
+    n_test : int, 
+    resolution : int, 
+    batch_size : int,
+    normalize : bool,
+    file_names : Optional[List[str]] = None,
 ):
-    ##
-    data, variables = read_multi_tec_files_concat(
-        file_names=file_names,
-        expand_dims=True,
-        axis=-1
+    # Check if pt file is already exist
+    if not os.path.isdir(root_dir):
+        raise ValueError('Data directory does not exist.')
+    if not os.path.isfile(f'{root_dir}/{dataset_name}_train_{resolution}.pt'):
+        ##
+        data, variables = read_multi_tec_files_concat(
+            file_names=file_names,
+            expand_dims=True,
+            axis=-1
+        )
+        ##
+        x, y = extract_x_y_from_tec_data(
+            data=data['node'],
+            variable_dim=0,
+            variable_index=[3,4,5],
+            timestep_dim=2,
+            timestep_x=5,
+            timestep_y=1,
+            _combine_dims=True
+        )
+        x = np.transpose(x, (1,2,0))
+        y = np.transpose(y, (1,2,0))
+        ##
+        if normalize:
+            _min = min(x.min(), y.min())
+            _max = max(x.max(), y.max())
+            x = (x - _min) / (_max - _min)
+            y = (y - _min) / (_max - _min)
+            torch.save({ 'min' : _min, 'max' : _max}, f'{root_dir}/{dataset_name}_train_{resolution}_min_max.pt')
+        ##
+        x = torch.tensor(x)
+        y = torch.tensor(y)
+        _data = {'x' : x, 'y' : y}
+        torch.save(_data, f'{root_dir}/{dataset_name}_train_{resolution}.pt')
+    
+    #
+    dataset = PTDataset(
+        root_dir=root_dir,
+        dataset_name = dataset_name,
+        n_train = n_train,
+        n_tests = [],
+        batch_size = batch_size,
+        test_batch_sizes = [],
+        train_resolution = resolution,
+        test_resolutions = [],
+        encode_input = False,
+        encode_output = False,
+        channel_dim=1,
+        channels_squeezed = False
     )
-    ##
-    x, y = extract_x_y_from_tec_data(
-        data=data['node'],
-        variable_dim=0,
-        variable_index=[3,4,5],
-        timestep_dim=2,
-        timestep_x=5,
-        timestep_y=1,
-        _combine_dims=True
-    )
-    x = np.transpose(x, (1,2,0))
-    y = np.transpose(y, (1,2,0))
-    ##
-    x = torch.tensor()
+    if normalize:
+        _min_max = torch.load(f'{root_dir}/{dataset_name}_train_{resolution}_min_max.pt', weights_only=False)
+        setattr(dataset, 'min', _min_max['min'])
+        setattr(dataset, 'max', _min_max['max'])
+    else:
+        setattr(dataset, 'min', None)
+        setattr(dataset, 'max', None)
+    return dataset
+
+def recurrent_formulation(
+        
+    model,
+    initial_input : torch.Tensor,
+    n_iteration : int,
+    n_timesteps : int,
+    n_variables : int,
+    device,
+):
+    """
+    model : pytorch neural network model
+    initial_input : pytorch Tensor size(1, n_channels, n_nodes)
+                    wherea n_channels = n_variables * n_timesteps
+    """
+    # variable_dim = 1
+    timestep_dim = 2
+    model.to(device).eval()
+    input = initial_input[0].unsqueeze(0).float().to(device)
+    recurrent_output = []
+    for _ in range(n_iteration):
+
+        output = model(input)
+
+        recurrent_output.append(output.unsqueeze(timestep_dim))
+
+        input = torch.reshape(input, (1, n_variables, n_timesteps, -1))
+
+        _indices = torch.tensor(list(range(1,input.size(timestep_dim)))).to(device)
+        input = torch.index_select(input, dim=timestep_dim, index=_indices)
+
+        input = torch.cat([
+            input,
+            output.detach().unsqueeze(timestep_dim)
+        ], dim=timestep_dim)
+        input = torch.reshape(input, (1, n_variables * n_timesteps, -1))
+    recurrent_output = torch.cat(recurrent_output, dim=timestep_dim)
+    return recurrent_output
+
+def write_data_to_tec_file(data, file_name):
+    #
+    file = open(file_name, 'w+')
+    #
+    file.write('TITLE     = ""\n')
+    file.write('VARIABLES = "x"\n')
+    file.write('"y"\n')
+    file.write('"z"\n')
+    file.write('"u"\n')
+    file.write('"v"\n')
+    file.write('"w"\n')
+    file.write('"p"\n')
+    file.write('"f"\n')
+    file.write('"vmag"\n')
+    file.write('ZONE T="Slice: Arbitrary, Dist=0"\n')
+    file.write('STRANDID=2, SOLUTIONTIME=2.4\n')
+    file.write('Nodes=78083, Elements=116949, ZONETYPE=FEQuadrilateral\n')
+    file.write('DATAPACKING=BLOCK\n')
+    file.write('DT=(SINGLE SINGLE SINGLE SINGLE SINGLE SINGLE SINGLE SINGLE SINGLE )\n')
+    #
+    file.close()
