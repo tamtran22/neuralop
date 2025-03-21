@@ -166,8 +166,8 @@ def load_tecplot_to_pt_dataset(
         if normalize:
             _min = min(x.min(), y.min())
             _max = max(x.max(), y.max())
-            x = (x - _min) / (_max - _min)
-            y = (y - _min) / (_max - _min)
+            x = 2 * (x - _min) / (_max - _min) - 1
+            y = 2 * (y - _min) / (_max - _min) - 1
             torch.save({ 'min' : _min, 'max' : _max}, f'{root_dir}/{dataset_name}_train_{resolution}_min_max.pt')
         ##
         x = torch.tensor(x)
@@ -237,7 +237,15 @@ def recurrent_formulation(
     recurrent_output = torch.cat(recurrent_output, dim=timestep_dim)
     return recurrent_output
 
-def write_data_to_tec_file(data, file_name):
+def write_data_to_tec_file(
+    data : Union[np.ndarray, torch.Tensor],
+    data_element : Union[np.ndarray, List[np.ndarray]],
+    file_name,
+):
+    """
+    data : shape (n_variables, n_timesteps, n_nodes)
+    data_element : array shape (n_elements, 4) or list of array shape (n_elements, 4) x n_zones
+    """
     #
     file = open(file_name, 'w+')
     #
